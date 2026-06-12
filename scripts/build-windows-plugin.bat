@@ -21,8 +21,10 @@ if not exist build mkdir build
 REM /LD = DLL, /MT = static CRT (no VC++ redistributable needed at the end user),
 REM /utf-8 = read the UTF-8 sources correctly. Output extension is .fmx64.
 cl /std:c++17 /utf-8 /EHsc /O2 /MT /nologo /W3 /LD ^
-   /I Source /I Headers ^
+   /I Source /I Headers /I Libraries\miniz ^
    Source\ZooPlug.cpp Source\ShellExec.cpp Source\ProcessRun.cpp Source\PowerShellExec.cpp ^
+   Source\MooError.cpp Source\FileOps.cpp Source\HashImpl.cpp Source\ZipOps.cpp ^
+   Libraries\miniz\miniz.c ^
    /Fo:build\ /Fe:build\ZooPlug.fmx64 ^
    /link Libraries\win64\FMWrapper.lib
 if errorlevel 1 exit /b 1
