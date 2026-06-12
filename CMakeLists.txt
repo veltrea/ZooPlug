@@ -30,9 +30,35 @@ add_executable(test_powershellexec
     Source/ShellExec.cpp)
 target_include_directories(test_powershellexec PRIVATE Source)
 
+# MooPlug 互換エラー表（MakeMooError / MooErrorDetail）
+add_executable(test_mooerror
+    tests/test_mooerror.cpp
+    Source/MooError.cpp)
+target_include_directories(test_mooerror PRIVATE Source)
+
+# File/Folder 純粋ロジック（FileOps は改行正規化で ShellExec に依存）
+add_executable(test_fileops
+    tests/test_fileops.cpp
+    Source/FileOps.cpp
+    Source/ShellExec.cpp
+    Source/ProcessRun.cpp)
+target_include_directories(test_fileops PRIVATE Source)
+
+# Moo_Hash（MD5/SHA-1/SHA-256/SHA-512、NIST ベクタで検証）
+add_executable(test_hash
+    tests/test_hash.cpp
+    Source/HashImpl.cpp
+    Source/FileOps.cpp
+    Source/ShellExec.cpp
+    Source/ProcessRun.cpp)
+target_include_directories(test_hash PRIVATE Source)
+
 enable_testing()
 add_test(NAME shellexec COMMAND test_shellexec)
 add_test(NAME powershellexec COMMAND test_powershellexec)
+add_test(NAME mooerror COMMAND test_mooerror)
+add_test(NAME fileops COMMAND test_fileops)
+add_test(NAME hash COMMAND test_hash)
 
 # ---------------------------------------------------------------------------
 # 2) FileMaker プラグイン本体（FMWrapper のリンクが必要）
@@ -49,7 +75,10 @@ if(BUILD_PLUGIN)
         Source/ZooPlug.cpp
         Source/ShellExec.cpp
         Source/ProcessRun.cpp
-        Source/PowerShellExec.cpp)
+        Source/PowerShellExec.cpp
+        Source/MooError.cpp
+        Source/FileOps.cpp
+        Source/HashImpl.cpp)
 
     if(WIN32)
         add_library(ZooPlug SHARED ${PLUGIN_SOURCES})

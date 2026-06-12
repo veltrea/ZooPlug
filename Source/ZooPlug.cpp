@@ -28,6 +28,9 @@
 
 #include "ShellExec.h"
 #include "PowerShellExec.h"
+#include "MooError.h"
+#include "FileOps.h"
+#include "HashImpl.h"
 
 #ifdef _MSC_VER
 // #pragma mark は Xcode のコード折り畳み用。MSVC は知らないので C4068 を黙らせる。
@@ -118,6 +121,48 @@ static std::string TextAsUTF8 ( const fmx::Text& text )
 	std::vector<char> buffer ( static_cast<std::size_t>(size) * 4 + 1, '\0' );
 	text.GetBytes ( buffer.data(), static_cast<fmx::uint32>(buffer.size()), 0, size, fmx::Text::kEncoding_UTF8 );
 	return std::string ( buffer.data() );	// null 終端まで
+}
+
+
+// UTF-8 テキストを戻り値にする
+static void SetReplyText ( fmx::Data& reply, const std::string& utf8 )
+{
+	fmx::TextUniquePtr text;
+	if ( !utf8.empty() ) {
+		text->AssignWithLength ( utf8.c_str(), static_cast<fmx::uint32>(utf8.size()), fmx::Text::kEncoding_UTF8 );
+	}
+	fmx::LocaleUniquePtr default_locale;
+	reply.SetAsText ( *text, *default_locale );
+}
+
+
+// 数値を戻り値にする。MooPlug の「成功 = true」「真偽値」は数値 1 / 0
+//（0.4.9 バイナリは FixPt + SetAsNumber を使い、"True"/"False" 文字列リテラルを持たない）
+static void SetReplyNumber ( fmx::Data& reply, fmx::int64 value )
+{
+	fmx::FixPtUniquePtr number;
+	number->AssignInt64 ( value );
+	reply.SetAsNumber ( *number );
+}
+
+
+// MooPlug 形式のエラー文字列 "Moo_関数名|Err_N" を戻り値にする
+static void SetReplyMooError ( fmx::Data& reply, const char* function_name, int error_number )
+{
+	SetReplyText ( reply, zoo::MakeMooError ( function_name, error_number ) );
+}
+
+
+// ASCII の大文字小文字を畳む（sInfo / sOptions の比較用）
+static std::string FoldAsciiLower ( const std::string& s )
+{
+	std::string out = s;
+	for ( char& c : out ) {
+		if ( c >= 'A' && c <= 'Z' ) {
+			c = static_cast<char>(c - 'A' + 'a');
+		}
+	}
+	return out;
 }
 
 
@@ -216,6 +261,313 @@ fmx::errcode Zoo_PowerShell ( short /* function_id */, const fmx::ExprEnv& /* en
 } // Zoo_PowerShell
 
 
+/* ****************************************************************************
+
+ MooPlug 互換関数（Tier A）
+
+ シグネチャ・エラーコード・戻り値は MooPlug 0.4.9 実バイナリ互換
+ （docs/mooplug-reference.md / docs/zoo-plug-implementation-spec.md）。
+ 純粋ロジックは Source/FileOps.* / HashImpl.* / MooError.* にあり、
+ ここでは引数の取り出しと戻り値の整形だけを行う。
+
+ **************************************************************************** */
+
+/*
+ Moo_Version — MooPlug のバージョン文字列を返す（引数なし）
+*/
+fmx::errcode Moo_Version ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& /* parameters */, fmx::Data& reply )
+{
+	SetReplyText ( reply, zoo::kMooVersionString );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_ErrorDetail ( sError ) — エラーコード文字列を説明文に変換する
+*/
+fmx::errcode Moo_ErrorDetail ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	std::string detail;
+	if ( parameters.Size() >= 1 ) {
+		detail = zoo::MooErrorDetail ( TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) ) );
+	}
+	SetReplyText ( reply, detail );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FileExists ( sFile ) — ファイルの存在を 1 / 0 で返す
+*/
+fmx::errcode Moo_FileExists ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 1 ) { SetReplyMooError ( reply, "Moo_FileExists", 1 ); return kSPNoError; }
+	bool exists = false;
+	const int err = zoo::FileExists ( TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) ), exists );
+	if ( err ) SetReplyMooError ( reply, "Moo_FileExists", err );
+	else SetReplyNumber ( reply, exists ? 1 : 0 );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FileCopy ( sSource ; sDest {; bOverwrite ; bProgress } ) — ファイルをコピーする
+ bProgress は受け取るだけで現状未使用（進捗ダイアログは Tier C で実装予定）
+*/
+fmx::errcode Moo_FileCopy ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 2 ) { SetReplyMooError ( reply, "Moo_FileCopy", 1 ); return kSPNoError; }
+	const std::string source = TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) );
+	const std::string dest = TextAsUTF8 ( parameters.AtAsText ( kSPSecondParameter ) );
+	const bool overwrite = parameters.Size() >= 3 ? parameters.AtAsBoolean ( kSPThirdParameter ) : false;
+	const int err = zoo::FileCopy ( source, dest, overwrite );
+	if ( err ) SetReplyMooError ( reply, "Moo_FileCopy", err );
+	else SetReplyNumber ( reply, 1 );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FileDelete ( sFile ) — ファイルを削除する
+*/
+fmx::errcode Moo_FileDelete ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 1 ) { SetReplyMooError ( reply, "Moo_FileDelete", 1 ); return kSPNoError; }
+	const int err = zoo::FileDelete ( TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) ) );
+	if ( err ) SetReplyMooError ( reply, "Moo_FileDelete", err );
+	else SetReplyNumber ( reply, 1 );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FileMove ( sSource ; sDest {; bOverwrite } ) — ファイルを移動する
+*/
+fmx::errcode Moo_FileMove ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 2 ) { SetReplyMooError ( reply, "Moo_FileMove", 1 ); return kSPNoError; }
+	const std::string source = TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) );
+	const std::string dest = TextAsUTF8 ( parameters.AtAsText ( kSPSecondParameter ) );
+	const bool overwrite = parameters.Size() >= 3 ? parameters.AtAsBoolean ( kSPThirdParameter ) : false;
+	const int err = zoo::FileMove ( source, dest, overwrite );
+	if ( err ) SetReplyMooError ( reply, "Moo_FileMove", err );
+	else SetReplyNumber ( reply, 1 );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FileRead ( sFile ) — テキストファイルを読んで内容を返す
+ UTF-8 として読み、不正なら Windows では ANSI(CP932) として復号。改行は CR 正規化。
+*/
+fmx::errcode Moo_FileRead ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 1 ) { SetReplyMooError ( reply, "Moo_FileRead", 1 ); return kSPNoError; }
+	std::string text;
+	const int err = zoo::FileRead ( TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) ), text );
+	if ( err ) SetReplyMooError ( reply, "Moo_FileRead", err );
+	else SetReplyText ( reply, text );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FileWrite ( sFile ; sText {; bAppend } ) — ファイルへ書き込み/追記する
+ 0.4.9 実機と同じ 3 引数（ドキュメントにある bOverwrite はバイナリに存在しない）。
+ UTF-8 で書き、改行は OS ネイティブ（Win=CRLF / 他=LF）へ変換する。
+*/
+fmx::errcode Moo_FileWrite ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 2 ) { SetReplyMooError ( reply, "Moo_FileWrite", 1 ); return kSPNoError; }
+	const std::string file = TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) );
+	const std::string text = TextAsUTF8 ( parameters.AtAsText ( kSPSecondParameter ) );
+	const bool append = parameters.Size() >= 3 ? parameters.AtAsBoolean ( kSPThirdParameter ) : false;
+	const int err = zoo::FileWrite ( file, text, append );
+	if ( err ) SetReplyMooError ( reply, "Moo_FileWrite", err );
+	else SetReplyNumber ( reply, 1 );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FileInfo ( sFile ; sInfo {; sOptions } ) — ファイル情報の取得・設定
+   sInfo = size     : sOptions = human（既定）/ bytes
+   sInfo = version  : Windows の VERSIONINFO（%d.%d.%d.%d）。他 OS は Err_6
+   sInfo = created  : sOptions 省略で取得（タイムスタンプ）、タイムスタンプを渡すと設定
+   sInfo = modified : 同上
+*/
+fmx::errcode Moo_FileInfo ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	const char* const kName = "Moo_FileInfo";
+	if ( parameters.Size() < 2 ) { SetReplyMooError ( reply, kName, 1 ); return kSPNoError; }
+	const std::string file = TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) );
+	const std::string info = FoldAsciiLower ( TextAsUTF8 ( parameters.AtAsText ( kSPSecondParameter ) ) );
+
+	if ( info == "size" ) {
+		// 省略時の既定は human（StrFormatByteSize 風）。
+		// TODO-compat: 実機 0.4.9 の省略時既定が human か bytes かは未確認（WORK1 で照合する）
+		std::string options = "human";
+		if ( parameters.Size() >= 3 ) {
+			const std::string given = FoldAsciiLower ( TextAsUTF8 ( parameters.AtAsText ( kSPThirdParameter ) ) );
+			if ( !given.empty() ) options = given;
+		}
+		if ( options != "human" && options != "bytes" ) { SetReplyMooError ( reply, kName, 5 ); return kSPNoError; }
+		std::uint64_t bytes = 0;
+		const int err = zoo::FileSize ( file, bytes );
+		if ( err ) SetReplyMooError ( reply, kName, err );
+		else if ( options == "bytes" ) SetReplyNumber ( reply, static_cast<fmx::int64>(bytes) );
+		else SetReplyText ( reply, zoo::HumanReadableSize ( bytes ) );
+		return kSPNoError;
+	}
+
+	if ( info == "version" ) {
+		std::string version;
+		const int err = zoo::FileVersion ( file, version );
+		// 注: 0.4.9 バイナリには "Error retrieving file version" という生テキストの
+		// リテラルもあるが、ZooPlug はエラーコード方式（Err_6）で統一する（TODO-compat）
+		if ( err ) SetReplyMooError ( reply, kName, err );
+		else SetReplyText ( reply, version );
+		return kSPNoError;
+	}
+
+	if ( info == "created" || info == "modified" ) {
+		const bool creation = ( info == "created" );
+		if ( parameters.Size() >= 3 ) {
+			// sOptions にタイムスタンプを渡すと日時を設定する（成功 = 1）
+			const fmx::DateTime& ts = parameters.AtAsTimeStamp ( kSPThirdParameter );
+			zoo::FileTimeParts parts;
+			parts.year = ts.GetYear();
+			parts.month = ts.GetMonth();
+			parts.day = ts.GetDay();
+			parts.hour = static_cast<int>(ts.GetHour());
+			parts.minute = ts.GetMinute();
+			parts.second = ts.GetSec();
+			if ( parts.year <= 0 ) { SetReplyMooError ( reply, kName, 5 ); return kSPNoError; } // タイムスタンプとして解釈できない
+			const int err = zoo::FileTimeSet ( file, creation, parts );
+			if ( err ) SetReplyMooError ( reply, kName, err );
+			else SetReplyNumber ( reply, 1 );
+		} else {
+			zoo::FileTimeParts parts;
+			const int err = zoo::FileTimeGet ( file, creation, parts );
+			if ( err ) { SetReplyMooError ( reply, kName, err ); return kSPNoError; }
+			fmx::DateTimeUniquePtr timestamp;
+			timestamp->SetNormalizedDate ( static_cast<fmx::int16>(parts.month), static_cast<fmx::int16>(parts.day), static_cast<fmx::int16>(parts.year) );
+			timestamp->SetNormalizedTime ( parts.hour, static_cast<fmx::int16>(parts.minute), static_cast<fmx::int16>(parts.second) );
+			reply.SetAsTimeStamp ( *timestamp );
+		}
+		return kSPNoError;
+	}
+
+	SetReplyMooError ( reply, kName, 4 ); // 未知の sInfo
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FolderExists ( sFolder ) — フォルダの存在を 1 / 0 で返す
+*/
+fmx::errcode Moo_FolderExists ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 1 ) { SetReplyMooError ( reply, "Moo_FolderExists", 1 ); return kSPNoError; }
+	bool exists = false;
+	const int err = zoo::FolderExists ( TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) ), exists );
+	if ( err ) SetReplyMooError ( reply, "Moo_FolderExists", err );
+	else SetReplyNumber ( reply, exists ? 1 : 0 );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FolderCopy ( sSource ; sDest ) — フォルダを再帰コピーする
+*/
+fmx::errcode Moo_FolderCopy ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 2 ) { SetReplyMooError ( reply, "Moo_FolderCopy", 1 ); return kSPNoError; }
+	const int err = zoo::FolderCopy ( TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) ),
+									  TextAsUTF8 ( parameters.AtAsText ( kSPSecondParameter ) ) );
+	if ( err ) SetReplyMooError ( reply, "Moo_FolderCopy", err );
+	else SetReplyNumber ( reply, 1 );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FolderCreate ( sFolder ) — フォルダを作成する（中間フォルダも作る）
+*/
+fmx::errcode Moo_FolderCreate ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 1 ) { SetReplyMooError ( reply, "Moo_FolderCreate", 1 ); return kSPNoError; }
+	const int err = zoo::FolderCreate ( TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) ) );
+	if ( err ) SetReplyMooError ( reply, "Moo_FolderCreate", err );
+	else SetReplyNumber ( reply, 1 );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FolderDelete ( sFolder ) — フォルダを中身ごと削除する
+*/
+fmx::errcode Moo_FolderDelete ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 1 ) { SetReplyMooError ( reply, "Moo_FolderDelete", 1 ); return kSPNoError; }
+	const int err = zoo::FolderDelete ( TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) ) );
+	if ( err ) SetReplyMooError ( reply, "Moo_FolderDelete", err );
+	else SetReplyNumber ( reply, 1 );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FolderMove ( sSource ; sDest ) — フォルダを移動する
+*/
+fmx::errcode Moo_FolderMove ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 2 ) { SetReplyMooError ( reply, "Moo_FolderMove", 1 ); return kSPNoError; }
+	const int err = zoo::FolderMove ( TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) ),
+									  TextAsUTF8 ( parameters.AtAsText ( kSPSecondParameter ) ) );
+	if ( err ) SetReplyMooError ( reply, "Moo_FolderMove", err );
+	else SetReplyNumber ( reply, 1 );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_FolderList ( sFolder {; sPattern ; sSeparator } ) — フォルダ直下のファイル一覧
+ 既定: sPattern = "*.*"（すべて）、sSeparator = "|"
+*/
+fmx::errcode Moo_FolderList ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 1 ) { SetReplyMooError ( reply, "Moo_FolderList", 1 ); return kSPNoError; }
+	const std::string folder = TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) );
+	const std::string pattern = parameters.Size() >= 2 ? TextAsUTF8 ( parameters.AtAsText ( kSPSecondParameter ) ) : std::string("*.*");
+	const std::string separator = parameters.Size() >= 3 ? TextAsUTF8 ( parameters.AtAsText ( kSPThirdParameter ) ) : std::string("|");
+	std::string list;
+	const int err = zoo::FolderList ( folder, pattern, separator, list );
+	if ( err ) SetReplyMooError ( reply, "Moo_FolderList", err );
+	else SetReplyText ( reply, list );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_Hash ( sHash ; sText {; bFile } ) — MD5 / SHA1 / SHA256 / SHA512 ハッシュ
+ 出力は小文字 16 進。bFile = True なら sText をファイルパスとして扱う。
+*/
+fmx::errcode Moo_Hash ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 2 ) { SetReplyMooError ( reply, "Moo_Hash", 1 ); return kSPNoError; }
+	const std::string algorithm = TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) );
+	const std::string input = TextAsUTF8 ( parameters.AtAsText ( kSPSecondParameter ) );
+	const bool is_file = parameters.Size() >= 3 ? parameters.AtAsBoolean ( kSPThirdParameter ) : false;
+	std::string hex;
+	const int err = is_file ? zoo::HashFile ( algorithm, input, hex )
+							: zoo::HashString ( algorithm, input, hex );
+	if ( err ) SetReplyMooError ( reply, "Moo_Hash", err );
+	else SetReplyText ( reply, hex );
+	return kSPNoError;
+}
+
+
 /* ***************************************************************************
 
  Public plug-in functions
@@ -227,48 +579,112 @@ fmx::errcode Zoo_PowerShell ( short /* function_id */, const fmx::ExprEnv& /* en
 #pragma mark -
 
 /*
+ 登録テーブル
+
+ - 順序は不変厳守（funcId は登録順に振られるため、途中への挿入は既存の計算式を壊す）。
+   既存の moo_shell → zoo_powershell の後ろに、MooPlug 互換関数を 0.4.9 実機リスト順で
+   追加していく。今後の新関数（Zip/Download/FTP/Tier B/C）も必ず末尾に足すこと。
+ - Moo_* のプロトタイプ文字列は 0.4.9 実機の外部関数リスト（docs/mooplug-reference.md）
+   の表記そのまま。既存の NumberOfParameters が { ; opt } 記法から必須/省略可能数を出す。
+ */
+
+struct PluginFunctionDef {
+	const char* prototype;
+	fmx::ExtPluginType function;
+	const char* description;
+};
+
+static const PluginFunctionDef kPluginFunctions[] = {
+	{ "moo_shell ( command )",
+	  Moo_Shell,
+	  "moo_shell ( command ) - Run a one-line shell command and return its output. "
+	  "On Windows runs via cmd.exe, on macOS via /bin/sh. Reproduces MooPlug's moo_shell." },
+	{ "zoo_powershell ( command { ; bCore } )",
+	  Zoo_PowerShell,
+	  "zoo_powershell ( command { ; bCore } ) - Run a PowerShell script and return its output as UTF-8. "
+	  "bCore=True uses PowerShell 7 (pwsh), False (default) uses Windows PowerShell 5.1. "
+	  "On macOS/Linux always uses pwsh. Uses a temp-file approach that survives Constrained Language Mode "
+	  "(WDAC). ZooPlug-original; the PowerShell counterpart to moo_shell." },
+	{ "Moo_ErrorDetail( sError )",
+	  Moo_ErrorDetail,
+	  "Moo_ErrorDetail( sError ) - Returns the description for a MooPlug error code "
+	  "such as \"Moo_FileCopy|Err_3\"." },
+	{ "Moo_FileCopy( sSource ; sDest {; bOverwrite ; bProgress } )",
+	  Moo_FileCopy,
+	  "Moo_FileCopy( sSource ; sDest {; bOverwrite ; bProgress } ) - Copies a file. "
+	  "Returns 1 on success or an error code." },
+	{ "Moo_FileDelete( sFile )",
+	  Moo_FileDelete,
+	  "Moo_FileDelete( sFile ) - Deletes a file. Returns 1 on success or an error code." },
+	{ "Moo_FileExists( sFile )",
+	  Moo_FileExists,
+	  "Moo_FileExists( sFile ) - Checks if a file exists. Returns 1 or 0, or an error code." },
+	{ "Moo_FileInfo( sFile ; sInfo {; sOptions } )",
+	  Moo_FileInfo,
+	  "Moo_FileInfo( sFile ; sInfo {; sOptions } ) - Gets or sets file information. "
+	  "sInfo: size (sOptions: human/bytes), version, created, modified "
+	  "(pass a timestamp in sOptions to set)." },
+	{ "Moo_FileMove( sSource ; sDest {; bOverwrite } )",
+	  Moo_FileMove,
+	  "Moo_FileMove( sSource ; sDest {; bOverwrite } ) - Moves a file. "
+	  "Returns 1 on success or an error code." },
+	{ "Moo_FileRead( sFile )",
+	  Moo_FileRead,
+	  "Moo_FileRead( sFile ) - Reads a text file and returns its contents." },
+	{ "Moo_FileWrite( sFile ; sText {; bAppend } )",
+	  Moo_FileWrite,
+	  "Moo_FileWrite( sFile ; sText {; bAppend } ) - Writes or appends to a file. "
+	  "Returns 1 on success or an error code." },
+	{ "Moo_FolderCopy( sSource ; sDest )",
+	  Moo_FolderCopy,
+	  "Moo_FolderCopy( sSource ; sDest ) - Copies a folder recursively. "
+	  "Returns 1 on success or an error code." },
+	{ "Moo_FolderCreate( sFolder )",
+	  Moo_FolderCreate,
+	  "Moo_FolderCreate( sFolder ) - Creates a folder. Returns 1 on success or an error code." },
+	{ "Moo_FolderDelete( sFolder )",
+	  Moo_FolderDelete,
+	  "Moo_FolderDelete( sFolder ) - Deletes a folder and its contents. "
+	  "Returns 1 on success or an error code." },
+	{ "Moo_FolderExists( sFolder )",
+	  Moo_FolderExists,
+	  "Moo_FolderExists( sFolder ) - Checks if a folder exists. Returns 1 or 0, or an error code." },
+	{ "Moo_FolderList( sFolder {; sPattern ; sSeparator } )",
+	  Moo_FolderList,
+	  "Moo_FolderList( sFolder {; sPattern ; sSeparator } ) - Lists files in a folder. "
+	  "Defaults: sPattern = *.* and sSeparator = |." },
+	{ "Moo_FolderMove( sSource ; sDest )",
+	  Moo_FolderMove,
+	  "Moo_FolderMove( sSource ; sDest ) - Moves a folder. Returns 1 on success or an error code." },
+	{ "Moo_Hash( sHash ; sText {; bFile } )",
+	  Moo_Hash,
+	  "Moo_Hash( sHash ; sText {; bFile } ) - Returns the MD5, SHA1, SHA256 or SHA512 hash "
+	  "of a string, or of a file when bFile is true. Lower-case hex output." },
+	{ "Moo_Version",
+	  Moo_Version,
+	  "Moo_Version - Returns the MooPlug compatibility version string." },
+};
+
+
+/*
  initialise the plug-in
  perform any setup and register functions
  */
 
 const fmx::ptrtype Init ( FMX_ExternCallPtr /* pb */ )
 {
-	fmx::errcode error = kSPNoError;
 	// 古い FileMaker でもロードされるよう、必要十分な API バージョン（FileMaker 19 = 62）を
-	// 報告する。moo_shell が使う関数登録・Text/Data 操作はこれより古くから存在するので
+	// 報告する。使用している関数登録・Text/Data 操作はこれより古くから存在するので
 	// 機能的な影響はない。新しい FileMaker でもそのままロードできる。
 	// （最新版を名乗りたい場合は kCurrentExtnVersion に変える。kDoNotEnable で無効化も可能）
 	fmx::ptrtype enable = k190ExtnVersion;
 
-	/*
-	 register plug-in functions
-
-	 functions must always be registered in the same order (to avoid breaking
-	 existing calculations in FileMaker).
-	 */
-
-	error = RegisterFunction (
-		"moo_shell ( command )",
-		Moo_Shell,
-		"moo_shell ( command ) - Run a one-line shell command and return its output. "
-		"On Windows runs via cmd.exe, on macOS via /bin/sh. Reproduces MooPlug's moo_shell." );
-
-	if ( kSPNoError != error ) {
-		enable = (fmx::ptrtype)kDoNotEnable;
-	}
-
-	// 関数は常に同じ順序で登録すること（既存の計算式を壊さないため）。
-	// moo_shell の後に zoo_powershell を追加する。
-	error = RegisterFunction (
-		"zoo_powershell ( command { ; bCore } )",
-		Zoo_PowerShell,
-		"zoo_powershell ( command { ; bCore } ) - Run a PowerShell script and return its output as UTF-8. "
-		"bCore=True uses PowerShell 7 (pwsh), False (default) uses Windows PowerShell 5.1. "
-		"On macOS/Linux always uses pwsh. Uses a temp-file approach that survives Constrained Language Mode "
-		"(WDAC). ZooPlug-original; the PowerShell counterpart to moo_shell." );
-
-	if ( kSPNoError != error ) {
-		enable = (fmx::ptrtype)kDoNotEnable;
+	for ( const PluginFunctionDef& def : kPluginFunctions ) {
+		const fmx::errcode error = RegisterFunction ( def.prototype, def.function, def.description );
+		if ( kSPNoError != error ) {
+			enable = (fmx::ptrtype)kDoNotEnable;
+			break;
+		}
 	}
 
 	return enable;

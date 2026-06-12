@@ -39,6 +39,36 @@ echo === RUN test_powershellexec ===
 tests\test_powershellexec.exe
 if errorlevel 1 set "FAILED=1"
 
+echo.
+echo === BUILD test_mooerror ===
+cl /std:c++17 /utf-8 /EHsc /nologo /W4 /I Source ^
+    Source\MooError.cpp tests\test_mooerror.cpp ^
+    /Fe:tests\test_mooerror.exe
+if errorlevel 1 exit /b 1
+echo === RUN test_mooerror ===
+tests\test_mooerror.exe
+if errorlevel 1 set "FAILED=1"
+
+echo.
+echo === BUILD test_fileops ===
+cl /std:c++17 /utf-8 /EHsc /nologo /W4 /I Source ^
+    Source\FileOps.cpp Source\ShellExec.cpp Source\ProcessRun.cpp tests\test_fileops.cpp ^
+    /Fe:tests\test_fileops.exe
+if errorlevel 1 exit /b 1
+echo === RUN test_fileops ===
+tests\test_fileops.exe
+if errorlevel 1 set "FAILED=1"
+
+echo.
+echo === BUILD test_hash ===
+cl /std:c++17 /utf-8 /EHsc /nologo /W4 /I Source ^
+    Source\HashImpl.cpp Source\FileOps.cpp Source\ShellExec.cpp Source\ProcessRun.cpp tests\test_hash.cpp ^
+    /Fe:tests\test_hash.exe
+if errorlevel 1 exit /b 1
+echo === RUN test_hash ===
+tests\test_hash.exe
+if errorlevel 1 set "FAILED=1"
+
 if defined FAILED ( echo. & echo SOME TESTS FAILED & exit /b 1 )
 echo.
 echo ALL WINDOWS TESTS PASSED
