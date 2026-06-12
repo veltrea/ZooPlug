@@ -31,6 +31,7 @@
 #include "MooError.h"
 #include "FileOps.h"
 #include "HashImpl.h"
+#include "ZipOps.h"
 
 #ifdef _MSC_VER
 // #pragma mark は Xcode のコード折り畳み用。MSVC は知らないので C4068 を黙らせる。
@@ -568,6 +569,80 @@ fmx::errcode Moo_Hash ( short /* function_id */, const fmx::ExprEnv& /* environm
 }
 
 
+/*
+ Moo_ZipCompress ( sPath {; bTemp ; bOverwrite ; bFolderName ; sPassword } ) — Zip 圧縮/追加
+ bTemp は Boolean/String の二刀流（本家仕様）:
+   false/省略 = 入力と同じフォルダ / true = テンポラリフォルダ /
+   文字列 = 出力先（フルパス or ファイル名のみ）
+ 既存 Zip を指すと追加になる。sPassword は未対応（指定すると Err_5）。
+*/
+fmx::errcode Moo_ZipCompress ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 1 ) { SetReplyMooError ( reply, "Moo_ZipCompress", 1 ); return kSPNoError; }
+	const std::string path = TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) );
+
+	zoo::ZipCompressOptions options;
+	if ( parameters.Size() >= 2 ) {
+		const std::string temp_text = TextAsUTF8 ( parameters.AtAsText ( kSPSecondParameter ) );
+		const std::string folded = FoldAsciiLower ( temp_text );
+		if ( temp_text.empty() || folded == "0" || folded == "false" ) {
+			options.output = zoo::ZipCompressOptions::Output::SameFolder;
+		} else if ( folded == "1" || folded == "true" ) {
+			options.output = zoo::ZipCompressOptions::Output::TempFolder;
+		} else {
+			options.output = zoo::ZipCompressOptions::Output::Explicit;
+			options.explicit_path_utf8 = temp_text;
+		}
+	}
+	if ( parameters.Size() >= 3 ) options.overwrite_in_zip = parameters.AtAsBoolean ( kSPThirdParameter );
+	if ( parameters.Size() >= 4 ) options.include_folder_name = parameters.AtAsBoolean ( 3 );
+	if ( parameters.Size() >= 5 ) options.password_utf8 = TextAsUTF8 ( parameters.AtAsText ( 4 ) );
+
+	std::string zip_path;
+	const int err = zoo::ZipCompress ( path, options, zip_path );
+	if ( err ) SetReplyMooError ( reply, "Moo_ZipCompress", err );
+	else SetReplyText ( reply, zip_path );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_ZipExtract ( sFile {; bTemp ; bOverwrite } ) — Zip から最初の 1 ファイルを展開
+ bTemp = false（既定）なら Zip と同じフォルダへ、true ならテンポラリフォルダへ。
+ 複数ファイル展開は本家 0.4.9 も未対応（"a future version" のまま）。
+*/
+fmx::errcode Moo_ZipExtract ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 1 ) { SetReplyMooError ( reply, "Moo_ZipExtract", 1 ); return kSPNoError; }
+	const std::string zip = TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) );
+	const bool to_temp = parameters.Size() >= 2 ? parameters.AtAsBoolean ( kSPSecondParameter ) : false;
+	const bool overwrite = parameters.Size() >= 3 ? parameters.AtAsBoolean ( kSPThirdParameter ) : false;
+	std::string extracted;
+	const int err = zoo::ZipExtract ( zip, to_temp, overwrite, extracted );
+	if ( err ) SetReplyMooError ( reply, "Moo_ZipExtract", err );
+	else SetReplyText ( reply, extracted );
+	return kSPNoError;
+}
+
+
+/*
+ Moo_ZipList ( sZip {; sPattern ; sSeparator } ) — Zip の内容一覧
+ 既定: sPattern = "*.*"（すべて）、sSeparator = "|"。格納順で返す。
+*/
+fmx::errcode Moo_ZipList ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	if ( parameters.Size() < 1 ) { SetReplyMooError ( reply, "Moo_ZipList", 1 ); return kSPNoError; }
+	const std::string zip = TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) );
+	const std::string pattern = parameters.Size() >= 2 ? TextAsUTF8 ( parameters.AtAsText ( kSPSecondParameter ) ) : std::string("*.*");
+	const std::string separator = parameters.Size() >= 3 ? TextAsUTF8 ( parameters.AtAsText ( kSPThirdParameter ) ) : std::string("|");
+	std::string list;
+	const int err = zoo::ZipList ( zip, pattern, separator, list );
+	if ( err ) SetReplyMooError ( reply, "Moo_ZipList", err );
+	else SetReplyText ( reply, list );
+	return kSPNoError;
+}
+
+
 /* ***************************************************************************
 
  Public plug-in functions
@@ -663,6 +738,20 @@ static const PluginFunctionDef kPluginFunctions[] = {
 	{ "Moo_Version",
 	  Moo_Version,
 	  "Moo_Version - Returns the MooPlug compatibility version string." },
+	// ---- ここから後日追加分（登録順は不変厳守: 必ず末尾に足す） ----
+	{ "Moo_ZipCompress( sPath {; bTemp ; bOverwrite ; bFolderName ; sPassword } )",
+	  Moo_ZipCompress,
+	  "Moo_ZipCompress( sPath {; bTemp ; bOverwrite ; bFolderName ; sPassword } ) - "
+	  "Creates or adds to a Zip archive. bTemp: false = same folder, true = temp folder, "
+	  "or a string output path/filename. Returns the Zip path or an error code." },
+	{ "Moo_ZipExtract( sFile {; bTemp ; bOverwrite } )",
+	  Moo_ZipExtract,
+	  "Moo_ZipExtract( sFile {; bTemp ; bOverwrite } ) - Extracts the first file from a "
+	  "Zip archive. Returns the extracted file path or an error code." },
+	{ "Moo_ZipList( sZip {; sPattern ; sSeparator } )",
+	  Moo_ZipList,
+	  "Moo_ZipList( sZip {; sPattern ; sSeparator } ) - Lists the contents of a Zip archive. "
+	  "Defaults: sPattern = *.* and sSeparator = |." },
 };
 
 

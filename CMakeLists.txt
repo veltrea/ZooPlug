@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
-project(ZooPlug VERSION 1.0.0 LANGUAGES CXX)
+# C は同梱 miniz（Libraries/miniz/miniz.c）のため
+project(ZooPlug VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -53,12 +54,23 @@ add_executable(test_hash
     Source/ProcessRun.cpp)
 target_include_directories(test_hash PRIVATE Source)
 
+# Zip 3 関数（同梱 miniz 3.0.2 を使用）
+add_executable(test_zipops
+    tests/test_zipops.cpp
+    Source/ZipOps.cpp
+    Source/FileOps.cpp
+    Source/ShellExec.cpp
+    Source/ProcessRun.cpp
+    Libraries/miniz/miniz.c)
+target_include_directories(test_zipops PRIVATE Source Libraries/miniz)
+
 enable_testing()
 add_test(NAME shellexec COMMAND test_shellexec)
 add_test(NAME powershellexec COMMAND test_powershellexec)
 add_test(NAME mooerror COMMAND test_mooerror)
 add_test(NAME fileops COMMAND test_fileops)
 add_test(NAME hash COMMAND test_hash)
+add_test(NAME zipops COMMAND test_zipops)
 
 # ---------------------------------------------------------------------------
 # 2) FileMaker プラグイン本体（FMWrapper のリンクが必要）
@@ -78,11 +90,13 @@ if(BUILD_PLUGIN)
         Source/PowerShellExec.cpp
         Source/MooError.cpp
         Source/FileOps.cpp
-        Source/HashImpl.cpp)
+        Source/HashImpl.cpp
+        Source/ZipOps.cpp
+        Libraries/miniz/miniz.c)
 
     if(WIN32)
         add_library(ZooPlug SHARED ${PLUGIN_SOURCES})
-        target_include_directories(ZooPlug PRIVATE Source Headers)
+        target_include_directories(ZooPlug PRIVATE Source Headers Libraries/miniz)
 
         # 64bit FileMaker 用プラグインの拡張子は .fmx64（接頭辞なし）
         set_target_properties(ZooPlug PROPERTIES
@@ -101,7 +115,7 @@ if(BUILD_PLUGIN)
 
     elseif(APPLE)
         add_library(ZooPlug MODULE ${PLUGIN_SOURCES})
-        target_include_directories(ZooPlug PRIVATE Source Headers)
+        target_include_directories(ZooPlug PRIVATE Source Headers Libraries/miniz)
 
         # macOS の FileMaker プラグインは X.fmplugin バンドル
         set_target_properties(ZooPlug PROPERTIES
@@ -124,7 +138,7 @@ if(BUILD_PLUGIN)
         # Linux（FileMaker Server）。プラグインは拡張子 .fmx の共有モジュール。
         # 公式サンプルにならい clang + libc++ でのビルドを推奨（README 参照）。
         add_library(ZooPlug MODULE ${PLUGIN_SOURCES})
-        target_include_directories(ZooPlug PRIVATE Source Headers)
+        target_include_directories(ZooPlug PRIVATE Source Headers Libraries/miniz)
         set_target_properties(ZooPlug PROPERTIES
             OUTPUT_NAME "ZooPlug" PREFIX "" SUFFIX ".fmx"
             # 実行時 libFMWrapper.so は FileMaker の /opt/FileMaker/lib にある

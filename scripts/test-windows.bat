@@ -69,6 +69,17 @@ echo === RUN test_hash ===
 tests\test_hash.exe
 if errorlevel 1 set "FAILED=1"
 
+echo.
+echo === BUILD test_zipops ===
+cl /std:c++17 /utf-8 /EHsc /nologo /W4 /I Source /I Libraries\miniz ^
+    Source\ZipOps.cpp Source\FileOps.cpp Source\ShellExec.cpp Source\ProcessRun.cpp ^
+    Libraries\miniz\miniz.c tests\test_zipops.cpp ^
+    /Fe:tests\test_zipops.exe
+if errorlevel 1 exit /b 1
+echo === RUN test_zipops ===
+tests\test_zipops.exe
+if errorlevel 1 set "FAILED=1"
+
 if defined FAILED ( echo. & echo SOME TESTS FAILED & exit /b 1 )
 echo.
 echo ALL WINDOWS TESTS PASSED
