@@ -118,6 +118,34 @@ int main() {
         check_eq(RunPowerShell(""), "", "empty command returns empty");
     }
 
+#if defined(_WIN32)
+    // ---- Windows のホスト選択（bCore）。5.1=v5 / pwsh7=v7 でどちらが起動したか実証 ----
+    // pwsh7 が無ければ（ResolvePwshPath が起動できなければ）空が返るので SKIP。
+    std::printf("RunPowerShell host selection (Windows, bCore):\n");
+    {
+        PowerShellOptions ps51;            // bCore=false -> Windows PowerShell 5.1
+        const std::string v51 = RunPowerShell("Write-Output ('v' + $PSVersionTable.PSVersion.Major)", ps51);
+        std::printf("       bCore=false -> [%s]\n", v51.c_str());
+        check_eq(v51, "v5", "bCore=false launches Windows PowerShell 5.1");
+
+        PowerShellOptions core; core.use_core = true;   // bCore=true -> PowerShell 7 (pwsh)
+        const std::string v7 = RunPowerShell("Write-Output ('v' + $PSVersionTable.PSVersion.Major)", core);
+        if (v7.empty()) {
+            std::printf("  [SKIP] pwsh7 が見つからない/起動できないため bCore=true テストを省略\n");
+        } else {
+            std::printf("       bCore=true  -> [%s]\n", v7.c_str());
+            check_eq(v7, "v7", "bCore=true launches PowerShell 7 (pwsh)");
+
+            const std::string jp7 = RunPowerShell(u8"Write-Output '表予能'", core);
+            std::printf("       pwsh7 japanese -> [%s] hex=[%s]\n", jp7.c_str(), to_hex(jp7).c_str());
+            check_eq(jp7, u8"表予能", "pwsh7 Japanese round-trips as correct UTF-8");
+
+            // pwsh7 でも複数行・クオートが -File で壊れない
+            check_eq(RunPowerShell("$a = 4\n$b = 5\nWrite-Output ($a * $b)", core), "20", "pwsh7 multi-line script");
+        }
+    }
+#endif
+
     std::printf("\n%s (%d failure(s))\n", g_failures == 0 ? "ALL PASS" : "SOME FAILED", g_failures);
     return g_failures == 0 ? 0 : 1;
 }
