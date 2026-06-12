@@ -1,0 +1,37 @@
+# Build output
+/build/
+build*/
+*.o
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+# ただし同梱の FMWrapper リンクライブラリは追跡する
+!Libraries/win64/FMWrapper.lib
+
+# Plug-in artifacts
+*.fmx
+*.fmx64
+*.fmplugin/
+
+# Standalone test binaries
+/tests/test_shellexec
+/tests/test_shellexec.exe
+*.dSYM/
+
+# Editor / OS
+.DS_Store
+.vs/
+.vscode/
+*.user
+
+# Claude Code local settings (local paths, not for publishing)
+.claude/
+
+# Linux FMWrapper libs are not redistributed here; get them from the Claris SDK
+Libraries/linux/
+
+# Local reference material copied from the original MooPlug site (third-party
+# copyright / logo) — kept locally, never published
+docs/
