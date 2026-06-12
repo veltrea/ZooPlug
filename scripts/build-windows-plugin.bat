@@ -22,7 +22,7 @@ REM /LD = DLL, /MT = static CRT (no VC++ redistributable needed at the end user)
 REM /utf-8 = read the UTF-8 sources correctly. Output extension is .fmx64.
 cl /std:c++17 /utf-8 /EHsc /O2 /MT /nologo /W3 /LD ^
    /I Source /I Headers ^
-   Source\ZooPlug.cpp Source\ShellExec.cpp ^
+   Source\ZooPlug.cpp Source\ShellExec.cpp Source\ProcessRun.cpp Source\PowerShellExec.cpp ^
    /Fo:build\ /Fe:build\ZooPlug.fmx64 ^
    /link Libraries\win64\FMWrapper.lib
 if errorlevel 1 exit /b 1
