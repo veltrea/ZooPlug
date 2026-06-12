@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "ShellExec.h"
+#include "PowerShellExec.h"
 
 #ifdef _MSC_VER
 // #pragma mark は Xcode のコード折り畳み用。MSVC は知らないので C4068 を黙らせる。
@@ -161,6 +162,60 @@ fmx::errcode Moo_Shell ( short /* function_id */, const fmx::ExprEnv& /* environ
 } // Moo_Shell
 
 
+/*
+ zoo_powershell ( command { ; bCore } )
+
+ 第 1 引数のスクリプトを PowerShell で実行し、標準出力＋標準エラーを UTF-8 テキストで返す。
+ ZooPlug 独自関数（moo_shell の cmd に対する PowerShell 版）。
+   command : PowerShell スクリプト／ワンライナー（UTF-8・複数行可）
+   bCore   : 省略可・既定 False。True=PowerShell 7(pwsh) / False=Windows PowerShell 5.1
+             （macOS/Linux には 5.1 が無いので常に pwsh）
+ 実装は docs/zoo-powershell-design.md §18 の「テンポラリファイル方式」:
+   temp.ps1(UTF-8 BOM) に書き -File で渡し、出力は Out-File -Encoding utf8 でファイルへ → 読む。
+ これにより全 PowerShell 版・FullLanguage/ConstrainedLanguage（WDAC enforce 下含む）で
+ UTF-8 往復が壊れない（§21/§22 で実機実証）。改行は CR 正規化・末尾改行除去（moo_shell と同じ）。
+ 出力エンコーディングは Out-File が常に UTF-8 にするため、moo_shell の CP932 復号とは対照的に
+ sEncoding 引数を持たない（必要になれば末尾省略可引数として追加可能）。
+*/
+fmx::errcode Zoo_PowerShell ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply );
+
+fmx::errcode Zoo_PowerShell ( short /* function_id */, const fmx::ExprEnv& /* environment */, const fmx::DataVect& parameters, fmx::Data& reply )
+{
+	fmx::errcode error = kSPNoError;
+
+	// 引数が無ければ空文字列を返す
+	if ( parameters.Size() < 1 ) {
+		fmx::TextUniquePtr empty;
+		fmx::LocaleUniquePtr empty_locale;
+		reply.SetAsText ( *empty, *empty_locale );
+		return error;
+	}
+
+	// 第 1 引数（スクリプト）を UTF-8 で取り出す
+	const std::string command = TextAsUTF8 ( parameters.AtAsText ( kSPFirstParameter ) );
+
+	// 第 2 引数 bCore（省略可）
+	zoo::PowerShellOptions opts;
+	if ( parameters.Size() >= 2 ) {
+		opts.use_core = parameters.AtAsBoolean ( kSPSecondParameter );
+	}
+
+	const std::string output = zoo::RunPowerShell ( command, opts );
+
+	// 結果を UTF-8 として FileMaker に返す
+	fmx::TextUniquePtr result_text;
+	if ( !output.empty() ) {
+		result_text->AssignWithLength ( output.c_str(), static_cast<fmx::uint32>(output.size()), fmx::Text::kEncoding_UTF8 );
+	}
+
+	fmx::LocaleUniquePtr default_locale;
+	reply.SetAsText ( *result_text, *default_locale );
+
+	return error;
+
+} // Zoo_PowerShell
+
+
 /* ***************************************************************************
 
  Public plug-in functions
@@ -197,6 +252,20 @@ const fmx::ptrtype Init ( FMX_ExternCallPtr /* pb */ )
 		Moo_Shell,
 		"moo_shell ( command ) - Run a one-line shell command and return its output. "
 		"On Windows runs via cmd.exe, on macOS via /bin/sh. Reproduces MooPlug's moo_shell." );
+
+	if ( kSPNoError != error ) {
+		enable = (fmx::ptrtype)kDoNotEnable;
+	}
+
+	// 関数は常に同じ順序で登録すること（既存の計算式を壊さないため）。
+	// moo_shell の後に zoo_powershell を追加する。
+	error = RegisterFunction (
+		"zoo_powershell ( command { ; bCore } )",
+		Zoo_PowerShell,
+		"zoo_powershell ( command { ; bCore } ) - Run a PowerShell script and return its output as UTF-8. "
+		"bCore=True uses PowerShell 7 (pwsh), False (default) uses Windows PowerShell 5.1. "
+		"On macOS/Linux always uses pwsh. Uses a temp-file approach that survives Constrained Language Mode "
+		"(WDAC). ZooPlug-original; the PowerShell counterpart to moo_shell." );
 
 	if ( kSPNoError != error ) {
 		enable = (fmx::ptrtype)kDoNotEnable;

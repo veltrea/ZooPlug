@@ -18,6 +18,8 @@ build*/
 # Standalone test binaries
 /tests/test_shellexec
 /tests/test_shellexec.exe
+/tests/test_powershellexec
+/tests/test_powershellexec.exe
 *.dSYM/
 
 # Editor / OS

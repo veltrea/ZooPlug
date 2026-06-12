@@ -18,11 +18,21 @@ endif()
 # ---------------------------------------------------------------------------
 add_executable(test_shellexec
     tests/test_shellexec.cpp
-    Source/ShellExec.cpp)
+    Source/ShellExec.cpp
+    Source/ProcessRun.cpp)
 target_include_directories(test_shellexec PRIVATE Source)
+
+# zoo_powershell（§18 テンポラリ方式）の純粋ロジック + 実 pwsh 往復（pwsh が無ければ SKIP）
+add_executable(test_powershellexec
+    tests/test_powershellexec.cpp
+    Source/PowerShellExec.cpp
+    Source/ProcessRun.cpp
+    Source/ShellExec.cpp)
+target_include_directories(test_powershellexec PRIVATE Source)
 
 enable_testing()
 add_test(NAME shellexec COMMAND test_shellexec)
+add_test(NAME powershellexec COMMAND test_powershellexec)
 
 # ---------------------------------------------------------------------------
 # 2) FileMaker プラグイン本体（FMWrapper のリンクが必要）
@@ -35,7 +45,11 @@ add_test(NAME shellexec COMMAND test_shellexec)
 option(BUILD_PLUGIN "Build the FileMaker plug-in (requires FMWrapper)" OFF)
 
 if(BUILD_PLUGIN)
-    set(PLUGIN_SOURCES Source/ZooPlug.cpp Source/ShellExec.cpp)
+    set(PLUGIN_SOURCES
+        Source/ZooPlug.cpp
+        Source/ShellExec.cpp
+        Source/ProcessRun.cpp
+        Source/PowerShellExec.cpp)
 
     if(WIN32)
         add_library(ZooPlug SHARED ${PLUGIN_SOURCES})

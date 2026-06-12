@@ -1,15 +1,19 @@
 // ShellExec.cpp — RunShellCommand / NormalizeNewlines の実装
 // Part of ZooPlug. License: see License.txt
+//
+// 実プロセス起動は ProcessRun に委譲し、ここでは「コマンドラインの組み立て」と
+// 「出力バイトのデコード（Windows は OEM/CP932 → UTF-8）＋改行正規化」だけを行う。
+// zoo_powershell（PowerShellExec）と CreateProcessW/POSIX 起動コードを共有する。
 
 #include "ShellExec.h"
+
+#include "ProcessRun.h"
 
 #include <vector>
 
 #if defined(_WIN32)
   #define WIN32_LEAN_AND_MEAN
   #include <windows.h>
-#else
-  #include <cstdio>
 #endif
 
 namespace zoo {
@@ -42,11 +46,10 @@ std::string NormalizeNewlines(const std::string& text) {
 
 #if defined(_WIN32)
 
-// ---- Windows 実装：cmd.exe をパイプで起動して出力を取得 ----
+// ---- Windows 実装：cmd.exe を起動し、出力を OEM コードページ(CP932)として復号 ----
 
 namespace {
 
-// UTF-8 → UTF-16
 std::wstring Utf8ToWide(const std::string& s) {
     if (s.empty()) return std::wstring();
     const int n = ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
@@ -78,102 +81,33 @@ std::string WideToUtf8(const std::wstring& w) {
 std::string RunShellCommand(const std::string& command_utf8) {
     if (command_utf8.empty()) return std::string();
 
-    SECURITY_ATTRIBUTES sa;
-    sa.nLength = sizeof(sa);
-    sa.lpSecurityDescriptor = nullptr;
-    sa.bInheritHandle = TRUE;
-
-    // 子プロセスの標準出力／標準エラーを受け取るパイプ
-    HANDLE read_pipe = nullptr;
-    HANDLE write_pipe = nullptr;
-    if (!::CreatePipe(&read_pipe, &write_pipe, &sa, 0)) {
-        return std::string();
-    }
-    // 読み取り側は子に継承させない
-    ::SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0);
-
-    // 標準入力は NUL に向け、入力待ちでハングしないようにする
-    HANDLE nul_in = ::CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                  &sa, OPEN_EXISTING, 0, nullptr);
-
-    STARTUPINFOW si;
-    ::ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdInput = nul_in;
-    si.hStdOutput = write_pipe;
-    si.hStdError = write_pipe; // stderr もまとめて取得
-
-    PROCESS_INFORMATION pi;
-    ::ZeroMemory(&pi, sizeof(pi));
-
     // cmd.exe /S /C "<command>"
     //   /S /C : 先頭と末尾の " を 1 組だけ外し、間をそのまま 1 コマンドとして実行する。
     //           ユーザーのワンライナーをそのまま渡せる。
-    std::wstring command_line = L"cmd.exe /S /C \"" + Utf8ToWide(command_utf8) + L"\"";
-    std::vector<wchar_t> mutable_cmd(command_line.begin(), command_line.end());
-    mutable_cmd.push_back(L'\0'); // CreateProcessW は書き換え可能なバッファを要求する
+    const std::wstring command_line = L"cmd.exe /S /C \"" + Utf8ToWide(command_utf8) + L"\"";
 
-    const BOOL ok = ::CreateProcessW(
-        nullptr,            // アプリ名はコマンドラインから解決
-        mutable_cmd.data(),
-        nullptr, nullptr,
-        TRUE,               // パイプを継承させる
-        CREATE_NO_WINDOW,   // コンソール窓を出さない
-        nullptr, nullptr,
-        &si, &pi);
-
-    // 親側では書き込み側を閉じる（子だけが保持 → 子の終了で EOF を検出できる）
-    ::CloseHandle(write_pipe);
-    if (nul_in) {
-        ::CloseHandle(nul_in);
-    }
-
-    if (!ok) {
-        ::CloseHandle(read_pipe);
-        return std::string();
-    }
-
-    // EOF まで生バイトを読む。読みながら受けるのでパイプ満杯でのデッドロックは起きない。
-    std::string raw;
-    char buf[4096];
-    DWORD nread = 0;
-    while (::ReadFile(read_pipe, buf, sizeof(buf), &nread, nullptr) && nread > 0) {
-        raw.append(buf, nread);
-    }
-    ::CloseHandle(read_pipe);
-
-    ::WaitForSingleObject(pi.hProcess, INFINITE);
-    ::CloseHandle(pi.hProcess);
-    ::CloseHandle(pi.hThread);
+    const ProcessResult pr = RunProcessCommandLine(command_line);
+    if (!pr.started) return std::string();
 
     // コンソール OEM コードページ（日本語環境なら CP932）→ UTF-16 → UTF-8
-    const std::string utf8 = WideToUtf8(BytesToWide(raw, CP_OEMCP));
+    const std::string utf8 = WideToUtf8(BytesToWide(pr.bytes, CP_OEMCP));
     return NormalizeNewlines(utf8);
 }
 
 #else
 
-// ---- POSIX 実装（macOS / Linux）：popen で /bin/sh -c 相当 ----
+// ---- POSIX 実装（macOS / Linux）：/bin/sh -c をシェル経由で実行 ----
 
 std::string RunShellCommand(const std::string& command_utf8) {
     if (command_utf8.empty()) return std::string();
 
-    // stderr もまとめて取得するため 2>&1 を付ける
-    const std::string full = command_utf8 + " 2>&1";
-    FILE* pipe = ::popen(full.c_str(), "r");
-    if (!pipe) return std::string();
-
-    std::string raw;
-    char buf[4096];
-    std::size_t n = 0;
-    while ((n = std::fread(buf, 1, sizeof(buf), pipe)) > 0) {
-        raw.append(buf, n);
-    }
-    ::pclose(pipe);
+    // stderr は ProcessRun が stdout と同じパイプに束ねる（" 2>&1" 相当）
+    const std::vector<std::string> argv = { "/bin/sh", "-c", command_utf8 };
+    const ProcessResult pr = RunProcessArgv(argv);
+    if (!pr.started) return std::string();
 
     // macOS / Linux のシェル出力は通常 UTF-8 なのでそのまま正規化のみ行う
-    return NormalizeNewlines(raw);
+    return NormalizeNewlines(pr.bytes);
 }
 
 #endif

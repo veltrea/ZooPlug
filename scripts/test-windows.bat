@@ -1,5 +1,5 @@
 @echo off
-REM Build and run the ShellExec unit test on Windows with MSVC.
+REM Build and run the ZooPlug pure-logic unit tests on Windows with MSVC.
 REM No FileMaker SDK needed - just a C++ compiler. VS is located via vswhere.
 setlocal enabledelayedexpansion
 
@@ -20,8 +20,25 @@ call "%VCVARS%" >nul
 REM This script lives in the repo's scripts\ folder; move to the repo root.
 cd /d "%~dp0.."
 
-cl /std:c++17 /utf-8 /EHsc /nologo /W4 /I Source Source\ShellExec.cpp tests\test_shellexec.cpp /Fe:tests\test_shellexec.exe
+echo === BUILD test_shellexec ===
+cl /std:c++17 /utf-8 /EHsc /nologo /W4 /I Source ^
+    Source\ShellExec.cpp Source\ProcessRun.cpp tests\test_shellexec.cpp ^
+    /Fe:tests\test_shellexec.exe
 if errorlevel 1 exit /b 1
-
-echo === RUN ===
+echo === RUN test_shellexec ===
 tests\test_shellexec.exe
+if errorlevel 1 set "FAILED=1"
+
+echo.
+echo === BUILD test_powershellexec ===
+cl /std:c++17 /utf-8 /EHsc /nologo /W4 /I Source ^
+    Source\PowerShellExec.cpp Source\ProcessRun.cpp Source\ShellExec.cpp tests\test_powershellexec.cpp ^
+    /Fe:tests\test_powershellexec.exe
+if errorlevel 1 exit /b 1
+echo === RUN test_powershellexec ===
+tests\test_powershellexec.exe
+if errorlevel 1 set "FAILED=1"
+
+if defined FAILED ( echo. & echo SOME TESTS FAILED & exit /b 1 )
+echo.
+echo ALL WINDOWS TESTS PASSED
