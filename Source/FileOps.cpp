@@ -22,6 +22,7 @@
 
 #if defined(_WIN32)
   #define WIN32_LEAN_AND_MEAN
+  #define NOMINMAX // windows.h の min/max マクロが std::min と衝突するのを防ぐ
   #include <windows.h>
   #pragma comment(lib, "Version.lib") // GetFileVersionInfoW / VerQueryValueW
 #else
