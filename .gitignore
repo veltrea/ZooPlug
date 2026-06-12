@@ -16,10 +16,13 @@ build*/
 *.fmplugin/
 
 # Standalone test binaries
+/tests/*.exe
 /tests/test_shellexec
-/tests/test_shellexec.exe
 /tests/test_powershellexec
-/tests/test_powershellexec.exe
+/tests/test_mooerror
+/tests/test_fileops
+/tests/test_hash
+/tests/test_zipops
 *.dSYM/
 
 # Editor / OS
