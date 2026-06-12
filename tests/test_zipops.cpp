@@ -47,6 +47,19 @@ void check_int(int actual, int expected, const char* label) {
     }
 }
 
+// パスの等価比較（Windows の \ と / の表記差を吸収する）
+void check_path_eq(const std::string& actual, const std::string& expected, const char* label) {
+    const bool same = zoo::PathFromUTF8(actual).lexically_normal() ==
+                      zoo::PathFromUTF8(expected).lexically_normal();
+    if (same) {
+        std::printf("  [PASS] %s\n", label);
+    } else {
+        std::printf("  [FAIL] %s\n         expected=[%s]\n         actual  =[%s]\n",
+                    label, expected.c_str(), actual.c_str());
+        ++g_failures;
+    }
+}
+
 bool Contains(const std::string& haystack, const std::string& needle) {
     return haystack.find(needle) != std::string::npos;
 }
@@ -76,7 +89,7 @@ int main() {
     std::printf("ZipCompress (single file, same folder):\n");
     std::string zip_path;
     check_int(ZipCompress(data + "/a.txt", same_folder, zip_path), 0, "compress a.txt");
-    check_eq(zip_path, data + "/a.zip", "zip created next to input");
+    check_path_eq(zip_path, data + "/a.zip", "zip created next to input");
     check(fs::exists(PathFromUTF8(zip_path)), "zip file exists");
     check_int(ZipCompress(base + "/nope.txt", same_folder, zip_path), 3, "missing input -> Err_3");
     check_int(ZipCompress("", same_folder, zip_path), 2, "empty input -> Err_2");
@@ -103,7 +116,7 @@ int main() {
         check_int(ZipExtract(data + "/a.zip", false, false, extracted), 8,
                   "destination exists without overwrite -> Err_8");
         check_int(ZipExtract(data + "/a.zip", false, true, extracted), 0, "extract with overwrite");
-        check_eq(extracted, data + "/a.txt", "extracted next to zip");
+        check_path_eq(extracted, data + "/a.txt", "extracted next to zip");
         std::string text;
         FileRead(extracted, text);
         check_eq(text, "hello zip", "content round-trips");
@@ -114,7 +127,7 @@ int main() {
     {
         std::string folder_zip;
         check_int(ZipCompress(data, same_folder, folder_zip), 0, "compress folder");
-        check_eq(folder_zip, base + "/data.zip", "folder zip placed in parent");
+        check_path_eq(folder_zip, base + "/data.zip", "folder zip placed in parent");
         std::string list;
         check_int(ZipList(folder_zip, "*.*", "|", list), 0, "list folder zip");
         check(Contains(list, "data/a.txt"), "folder name prefixed (bFolderName default)");
@@ -129,7 +142,7 @@ int main() {
         no_prefix.explicit_path_utf8 = "flat.zip";
         std::string flat_zip;
         check_int(ZipCompress(data, no_prefix, flat_zip), 0, "compress folder without prefix");
-        check_eq(flat_zip, base + "/flat.zip", "explicit filename lands next to input");
+        check_path_eq(flat_zip, base + "/flat.zip", "explicit filename lands next to input");
         check_int(ZipList(flat_zip, "a.txt", "|", list), 0, "list flat zip");
         check_eq(list, "a.txt", "no folder prefix when bFolderName = false");
     }
@@ -165,7 +178,7 @@ int main() {
                   "output folder missing -> Err_6");
         FolderCreate(base + "/out");
         check_int(ZipCompress(data + "/a.txt", full_path, out), 0, "full path output ok");
-        check_eq(out, base + "/out/explicit.zip", "explicit path respected");
+        check_path_eq(out, base + "/out/explicit.zip", "explicit path respected");
     }
 
     std::printf("empty zip:\n");
