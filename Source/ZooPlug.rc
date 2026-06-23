@@ -1,0 +1,63 @@
+// ZooPlug.rc — classic FileMaker plug-in resource (Windows STRINGTABLE).
+//
+// FileMaker Pro 11 (and earlier) reads the plug-in's identity from this
+// STRINGTABLE when it scans the Extensions folder: the options string (ID 1,
+// whose first four characters are the 4-char plug-in ID), the display name
+// (ID 128) and the description (ID 129). Without this resource the 32-bit
+// plug-in loads but is never listed in the Plug-ins preferences. rc.exe
+// compiles this into the .res that build-windows-plugin.bat links; a plain
+// cl /LD ignores .rc files entirely.
+//
+// ZooPlug registers its functions at run time through RegisterExternalFunction,
+// so the function-prototype strings below are informational only. Their
+// resource IDs are ZooPlug's own sequential numbering (200 + registration
+// order) and bear no relationship to the run-time funcId.
+#include <winres.h>
+
+STRINGTABLE
+BEGIN
+  1   "ZooP1YnYYnn"
+  128 "ZooPlug"
+  129 "ZooPlug — shell-execution and file/system plug-in (zoo_ functions)."
+
+  // Function prototypes (informational; resID = 200 + registration order).
+  200 "zoo_ProcessRunning ( sProcess )"
+  201 "zoo_ProcessCount ( sProcess )"
+  202 "zoo_DialogColour( bFull)"
+  203 "zoo_ErrorDetail( sError )"
+  204 "zoo_FTPDownload( sServer ; sUser ; sPass ; sRemotePath {; sLocalFile ; bProgress } )"
+  205 "zoo_PrinterDefault( { sPrinter } )"
+  206 "zoo_ProgressOptions( sTitle {; sCaption ; bCancel } )"
+  207 "zoo_ProcessKill( sProcess )"
+  208 "zoo_HotkeyAdd( sHotkey ; sFile ; sScript {; sParam ; bAlt ; bControl ; bShift ; bGlobal } )"
+  209 "zoo_HotkeyRemove( sHotkey )"
+  210 "zoo_HotkeyList( { sSeparator } )"
+  211 "zoo_Hash( sHash ; sText {; bFile } )"
+  212 "zoo_Shell( sShellCommand )"
+  213 "zoo_DownloadText( sURL )"
+  214 "zoo_DownloadFile( sURL {; sLocal ; bProgress } )"
+  215 "zoo_FileCopy( sSource ; sDest {; bOverwrite ; bProgress } )"
+  216 "zoo_FileMove( sSource ; sDest {; bOverwrite } )"
+  217 "zoo_FileExists( sFile )"
+  218 "zoo_FileDelete( sFile )"
+  219 "zoo_FolderCopy( sSource ; sDest )"
+  220 "zoo_FolderMove( sSource ; sDest )"
+  221 "zoo_FolderExists( sFolder )"
+  222 "zoo_FolderDelete( sFolder )"
+  223 "zoo_FolderCreate( sFolder )"
+  224 "zoo_ZipCompress( sPath {; bTemp ; bOverwrite ; bFolderName ; sPassword } )"
+  225 "zoo_ZipExtract( sFile {; bTemp ; bOverwrite } )"
+  226 "zoo_DialogFile( {bOpen ; sTitle ; sDefault } )"
+  227 "zoo_Version"
+  228 "zoo_DialogFolder( { sTitle ; bNewFolder } )"
+  229 "zoo_FileInfo( sFile ; sInfo {; sOptions } )"
+  230 "zoo_FTPDelete( sServer ; sUser ; sPass ; sRemotePath )"
+  231 "zoo_FileRead( sFile )"
+  232 "zoo_FolderList( sFolder {; sPattern ; sSeparator } )"
+  233 "zoo_FTPUpload( sServer ; sUser ; sPass ; sLocalFile ; sRemotePath {; bOverwrite ; bProgress } )"
+  234 "zoo_ZipList( sZip {; sPattern ; sSeparator } )"
+  235 "zoo_PrinterList( { sSeparator } )"
+  236 "zoo_FileWrite( sFile ; sText {; bAppend } )"
+  237 "zoo_ProcessList( { sSeparator } )"
+  238 "zoo_PowerShell ( command { ; bCore } )"
+END

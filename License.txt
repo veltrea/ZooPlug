@@ -1,0 +1,62 @@
+ZooPlug — a FileMaker plug-in modelled on the behaviour of MooPlug's moo_shell()
+
+Copyright (c) 2026 ZooPlug contributors
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+3. Neither the names of the copyright holders nor the names of their
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+
+================================================================================
+Third-party components
+================================================================================
+
+SimplePlugin scaffolding
+------------------------
+The plug-in scaffolding in Source/ZooPlug.cpp (the registration / GetString /
+entry-point machinery) is derived from Mark Banks' SimplePlugin template, used
+under the BSD 3-Clause License:
+
+    Copyright (c) 2010-2017 Mark Banks
+    All rights reserved.
+    http://banks.id.au/filemaker/plugins/simpleplugin/
+
+FileMaker plug-in API (Headers/FMWrapper/ and Libraries/)
+---------------------------------------------------------
+The FMWrapper headers and link libraries are part of the Claris FileMaker
+External Plug-In API, Copyright (c) Claris International Inc. (see the notice at
+the top of each header file). They come from the official FileMaker Plug-In SDK
+(API VERSION 77) and are redistributed here under the BSD-style license printed
+in each header, which permits redistribution in source and binary forms provided
+the copyright notice is retained. These files are NOT covered by the ZooPlug
+license above. The bundled libraries are:
+
+    Libraries/win64/FMWrapper.lib        Windows x64 (import library)
+    Libraries/macOS/FMWrapper.framework  macOS (universal: x86_64 + arm64)
+
+FMWrapper is only a stub: it resolves at run time against the FMWrapper that ships
+inside FileMaker, so the built plug-in is only useful to licensees of Claris
+FileMaker. The Linux (libFMWrapper.so) and iOS libraries are NOT bundled here —
+obtain them from the Claris FileMaker Plug-In SDK if you need them. (iOS is not a
+target anyway: moo_shell cannot launch a process in the iOS sandbox.)

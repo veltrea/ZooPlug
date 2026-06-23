@@ -1,0 +1,34 @@
+# Build output
+/build/
+build*/
+*.o
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+# Keep the vendored FMWrapper import library tracked
+!Libraries/win64/FMWrapper.lib
+
+# Plug-in artifacts
+*.fmx
+*.fmx64
+*.fmplugin/
+
+# Standalone test binaries
+/tests/*.exe
+*.dSYM/
+
+# Distribution artifacts
+/dist/
+
+# Editor / OS
+.DS_Store
+.vs/
+.vscode/
+*.user
+
+# Third-party FMWrapper libraries are NOT redistributed here; obtain them from
+# the Claris FileMaker Plug-In SDK and place them under the paths below.
+Libraries/linux/
+Libraries/fm11-sdk/
